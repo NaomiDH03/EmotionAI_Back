@@ -50,4 +50,5 @@ def analizar_texto():
 
 # Ejecutar la aplicación en el puerto 5000
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    port = int(os.getenv("PORT", 5000))  # Esto tomará el puerto asignado por Render, si no existe, usará el 5000
+    app.run(debug=True, host="0.0.0.0", port=port)  
