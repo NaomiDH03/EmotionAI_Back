@@ -7,62 +7,45 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configurar la API de OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv("OPENAI_API_KEY")  # Asegúrate de configurar la variable de entorno
 
 # Inicializar la aplicación Flask
 app = Flask(__name__)
 
-# Mensaje del sistema para el modelo
-messages = [
-    {
-        "role": "system",
-        "content": "Eres un asistente diseñado para combinar resultados de análisis de imágenes y textos. Responde de manera coherente con base en ambos prompts y proporciona recomendaciones o interpretaciones relevantes basadas en los análisis. No generes contenido irrelevante o fuera de contexto."
-    }
-]
-
-# Función para recibir los prompts y generar la respuesta
-def procesar_prompts(prompt_imagen, prompt_texto):
-    # Agregar los prompts del usuario al historial de mensajes
-    messages.append({
-        "role": "user",
-        "content": f"Analisis de imagen: {prompt_imagen}"
-    })
-    messages.append({
-        "role": "user",
-        "content": f"Analisis de texto: {prompt_texto}"
-    })
-
-    # Llamar a la API de OpenAI con los mensajes
+# Función para procesar el texto y generar la recomendación
+def procesar_texto(prompt_texto):
+    # Llamar a la API de OpenAI con parámetros para limitar la longitud
     response = openai.ChatCompletion.create(
         model="gpt-4",
-        messages=messages
+        messages=[
+            {"role": "system", "content": "Eres un asistente que analiza emociones en texto y ofrece recomendaciones empáticas muy breves y concretas para ayudar en situaciones difíciles."},
+            {"role": "user", "content": f"Texto: {prompt_texto}"}
+        ],
+        # Configuraciones para limitar la generación de tokens
+        max_tokens=300,  # Limita la respuesta a aproximadamente 300 tokens
+        temperature=0.7,  # Mantiene cierta creatividad pero con más control
+        top_p=0.9,  # Controla la diversidad de la generación
+        frequency_penalty=0.5,  # Reduce la repetición
+        presence_penalty=0.5  # Evita respuestas demasiado similares
     )
-
-    # Agregar la respuesta del modelo al historial
-    messages.append({
-        "role": "system",
-        "content": response.choices[0].message.content
-    })
-
-    # Retornar el contenido de la respuesta
+    # Retornar la recomendación generada
     return response.choices[0].message.content
 
-# Ruta de la API para procesar los prompts
-@app.route('/procesar-prompts', methods=['POST'])
-def analizar_prompts():
-    # Verificar que el cuerpo de la solicitud contenga los campos necesarios
+# Ruta de la API para procesar el texto
+@app.route('/procesar-texto', methods=['POST'])
+def analizar_texto():
+    # Verificar que el cuerpo de la solicitud contenga el texto
     data = request.get_json()
-    if 'prompt_imagen' not in data or 'prompt_texto' not in data:
-        return jsonify({"error": "Los campos 'prompt_imagen' y 'prompt_texto' son requeridos"}), 400
+    if 'prompt_texto' not in data:
+        return jsonify({"error": "El campo 'prompt_texto' es requerido"}), 400
 
-    # Obtener los prompts de la solicitud
-    prompt_imagen = data['prompt_imagen']
+    # Obtener el texto de la solicitud
     prompt_texto = data['prompt_texto']
 
-    # Generar la respuesta combinada
-    resultado = procesar_prompts(prompt_imagen, prompt_texto)
+    # Generar la recomendación
+    resultado = procesar_texto(prompt_texto)
 
-    # Retornar la respuesta como JSON
+    # Retornar la recomendación como JSON
     return jsonify({"resultado": resultado})
 
 # Ejecutar la aplicación en el puerto 5000
