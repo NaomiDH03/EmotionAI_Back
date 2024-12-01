@@ -47,6 +47,9 @@ def analizar_texto():
 
     # Retornar la recomendación como JSON
     return jsonify({"resultado": resultado})
+@app.route('/')
+def home():
+    return "DESPLEGADO"
 
 # Ejecutar la aplicación en el puerto 5000
 if __name__ == '__main__':
