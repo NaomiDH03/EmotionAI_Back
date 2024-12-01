@@ -2,7 +2,7 @@ import openai
 import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-
+from flask_cors import CORS
 # Cargar las variables de entorno
 load_dotenv()
 
@@ -11,7 +11,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")  # Asegúrate de configurar la vari
 
 # Inicializar la aplicación Flask
 app = Flask(__name__)
-
+CORS(app)
 # Función para procesar el texto y generar la recomendación
 def procesar_texto(prompt_texto):
     # Llamar a la API de OpenAI con parámetros para limitar la longitud
