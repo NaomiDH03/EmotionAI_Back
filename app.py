@@ -3,55 +3,153 @@ import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
-# Cargar las variables de entorno
+from PIL import Image
+import numpy as np
+from fer import FER
+import io
+
+
+# Cargamos variables de enotrno
 load_dotenv()
 
-# Configurar la API de OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Asegúrate de configurar la variable de entorno
+# Esto es para la api que ya se encuentra en mi .env
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Inicializar la aplicación Flask
 app = Flask(__name__)
-CORS(app)
-# Función para procesar el texto y generar la recomendación
-def procesar_texto(prompt_texto):
-    # Llamar a la API de OpenAI con parámetros para limitar la longitud
+
+# Ponemos esto ya que tuve problemillas
+CORS(app, origins=["http://localhost:5173"])
+
+
+# Con esta función analizamos el texto
+def analizar_texto(prompt_texto):
     response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "Eres un asistente que analiza emociones en texto y ofrece recomendaciones empáticas muy breves y concretas para ayudar en situaciones difíciles."},
-            {"role": "user", "content": f"Texto: {prompt_texto}"}
+            {"role": "system", "content": "Eres un asistente diseñado para analizar textos y proporcionar interpretaciones emocionales. Solo responde con la emocion dominante que detectes"},
+            {"role": "user", "content": f"Análisis de texto: {prompt_texto}"}
         ],
-        # Configuraciones para limitar la generación de tokens
-        max_tokens=300,  # Limita la respuesta a aproximadamente 300 tokens
-        temperature=0.7,  # Mantiene cierta creatividad pero con más control
-        top_p=0.9,  # Controla la diversidad de la generación
-        frequency_penalty=0.5,  # Reduce la repetición
-        presence_penalty=0.5  # Evita respuestas demasiado similares
+        max_tokens=15,
+        temperature=0.7,
+        top_p=0.9,
+        frequency_penalty=0.5,
+        presence_penalty=0.5
     )
-    # Retornar la recomendación generada
     return response.choices[0].message.content
 
-# Ruta de la API para procesar el texto
-@app.route('/procesar-texto', methods=['POST'])
-def analizar_texto():
-    # Verificar que el cuerpo de la solicitud contenga el texto
+# Con esta función analizamos la imagen
+def analizar_imagen(prompt_imagen):
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "Eres un asistente diseñado para analizar imágenes y proporcionar interpretaciones emocionales. Eres un asistente diseñado para analizar imágenes y proporcionar interpretaciones emocionales. Solo responde con una sola palabra que represente la emoción dominante detectada, sin añadir texto adicional."},
+            {"role": "user", "content": f"Análisis de imagen: {prompt_imagen}"}
+        ],
+        max_tokens=15,
+        temperature=0.7,
+        top_p=0.9,
+        frequency_penalty=0.5,
+        presence_penalty=0.5
+    )
+    return response.choices[0].message.content
+
+
+# Con esta funcion procesamos nuestra imagen y obetenemos la emocion 
+def obtener_emocion_imagen(file):
+    # Convertir el archivo a una imagen usando PIL
+    img = Image.open(io.BytesIO(file.read()))
+
+    # Lo convertimos a un array de numpy porque asi lo espera FER
+    img_np = np.array(img)
+
+    # Usamos fer
+    detector = FER()
+    emociones = detector.top_emotion(img_np) 
+    
+    # Retornamos la emocion
+    return emociones
+
+
+# Ruta para analizar solo la imagen y predecir la emoción
+@app.route('/analizar-imagen', methods=['POST'])
+def analizar_imagen_endpoint():
+    global resultado_imagen
+    if 'prompt_imagen' not in request.files:
+        return jsonify({'error': 'No se envió ninguna imagen'}), 400
+    
+    file = request.files['prompt_imagen']
+    if file.filename == '':
+        return jsonify({'error': 'Nombre de archivo vacío'}), 400
+    
+    # Obtener la emoción de la imagen
+    emocion = obtener_emocion_imagen(file)
+    
+    # Generar el prompt para OpenAI basado en la emoción
+    prompt_imagen = f"La persona en la imagen parece estar {emocion[0]}. ¿Qué emoción transmite esta imagen?"
+
+    # Analizar la imagen usando la API de OpenAI
+    resultado_imagen = analizar_imagen(prompt_imagen)
+    
+    return jsonify({'resultado_imagen': resultado_imagen})
+
+@app.route('/analizar-texto', methods=['POST'])
+def analizar_texto_endpoint():
+    global resultado_texto
     data = request.get_json()
     if 'prompt_texto' not in data:
         return jsonify({"error": "El campo 'prompt_texto' es requerido"}), 400
 
-    # Obtener el texto de la solicitud
     prompt_texto = data['prompt_texto']
+    resultado_texto = analizar_texto(prompt_texto)
+    return jsonify({"resultado_texto": resultado_texto})
 
-    # Generar la recomendación
-    resultado = procesar_texto(prompt_texto)
+@app.route('/analizar-combinado', methods=['POST'])
+def analizar_combinado_endpoint():
+    if 'prompt_imagen' not in request.files or 'prompt_texto' not in request.form:
+        return jsonify({'error': 'Se requiere tanto una imagen como un texto'}), 400
+    
+    file = request.files['prompt_imagen']
+    prompt_texto = request.form['prompt_texto']
+    
+    if file.filename == '':
+        return jsonify({'error': 'Nombre de archivo vacío'}), 400
+    
 
-    # Retornar la recomendación como JSON
-    return jsonify({"resultado": resultado})
+    emocion = obtener_emocion_imagen(file)
+
+    prompt_imagen = f"La persona en la imagen parece estar {emocion[0]}. ¿Qué emoción transmite esta imagen?"
+    
+
+    resultado_imagen = analizar_imagen(prompt_imagen)
+    
+
+    resultado_texto = analizar_texto(prompt_texto)
+    
+    # Aqui genramos la respuesta combianda
+    sugerencia_prompt = f"Texto analizado: {resultado_texto}. Imagen analizada: {resultado_imagen}. ¿Qué sugerencia puedes dar basada en estos análisis?"
+    sugerencia = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "Eres un asistente que da sugerencias empáticas basadas en análisis de texto e imagen, ofreciendo respuestas empáticas y adaptadas a las posibles diferencias emocionales, se breve"},
+            {"role": "user", "content": sugerencia_prompt}
+        ],
+        max_tokens=100,
+        temperature=0.7,
+        top_p=0.9,
+        frequency_penalty=0.5,
+        presence_penalty=0.5
+    ).choices[0].message.content
+    
+    return jsonify({'sugerencia': sugerencia})  # Nos devuelve su recomendación/sugerencia :)
+
+
+
 @app.route('/')
 def home():
     return "DESPLEGADO"
 
-# Ejecutar la aplicación en el puerto 5000
+# Ejecutar la aplicación
 if __name__ == '__main__':
-    port = int(os.getenv("PORT", 5000))  # Esto tomará el puerto asignado por Render, si no existe, usará el 5000
-    app.run(debug=True, host="0.0.0.0", port=port)  
+    port = int(os.getenv("PORT", 5000))
+    app.run(debug=True, host="0.0.0.0", port=port)
