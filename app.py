@@ -7,6 +7,10 @@ from PIL import Image
 import numpy as np
 from fer import FER
 import io
+<<<<<<< HEAD
+import sys
+=======
+>>>>>>> 7293eaa3f943b7cfa3c536031060344bbedd9a88
 
 
 # Cargamos variables de enotrno
